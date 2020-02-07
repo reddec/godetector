@@ -11,6 +11,7 @@ import (
 	"strings"
 )
 
+// Find package definition with respect to gomodules
 func FindPackageDefinitionDir(importPath string, workDir string) (string, error) {
 	abs, err := filepath.Abs(workDir)
 	if err != nil {
