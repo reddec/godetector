@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -73,7 +74,7 @@ func isVendorPackage(path string) (string, bool) {
 
 func isRootPackage(path string) bool {
 	GOPATH := filepath.Join(os.Getenv("GOPATH"), "src")
-	GOROOT := filepath.Join(os.Getenv("GOROOT"), "src")
+	GOROOT := filepath.Join(runtime.GOROOT(), "src")
 	return isRootOf(path, GOPATH) || isRootOf(path, GOROOT)
 }
 
@@ -81,4 +82,27 @@ func isRootOf(path, root string) bool {
 	root, _ = filepath.Abs(root)
 	path, _ = filepath.Abs(path)
 	return root == path
+}
+
+type packageKind int
+
+const (
+	gopath      packageKind = 0
+	modules     packageKind = 1
+	unspecified packageKind = gopath
+)
+
+func findPackageRootDir(absPath string) (string, packageKind) {
+	parts := filepath.SplitList(absPath)
+	for i := len(parts) - 1; i >= 0; i-- {
+		path := filepath.Join(parts[:i]...)
+		_, ok := isVendorPackage(path)
+		if ok {
+			return path, modules
+		}
+		if isRootPackage(path) {
+			return path, gopath
+		}
+	}
+	return absPath, unspecified
 }

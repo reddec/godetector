@@ -9,5 +9,5 @@ The library aims to provide useful utilities to work with golang packages:
 
 * Detect package name from directory (not just by using base name, but also parse go files)
 * Detect package import path (including vendor support and go modules)
-* No dependencies
+* Detect import package definition (where go files located) with respect to gomodules
 
