@@ -54,3 +54,17 @@ func ResolveImport(alias string, file *ast.File, workdir string) (*Import, error
 	}
 	return nil, fmt.Errorf("unresolved alias or package %s", alias)
 }
+
+// Aggregated information about directory
+func InspectImportByDir(pkgDir string) (*Import, error) {
+	path, err := FindImportPath(pkgDir)
+	if err != nil {
+		return nil, err
+	}
+	pkgName := FindPackageNameByDir(pkgDir)
+	return &Import{
+		Path:     path,
+		Package:  pkgName,
+		Location: pkgDir,
+	}, nil
+}
