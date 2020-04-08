@@ -1,8 +1,9 @@
 package godetector
 
 import (
-	"bufio"
 	"errors"
+	"golang.org/x/mod/modfile"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,24 +53,17 @@ func findImportPath(dir string) (string, error) {
 }
 
 func isVendorPackage(path string) (string, bool) {
-	path = filepath.Join(path, "go.mod")
-	if fs, err := os.Stat(path); err != nil {
-		return "", false
-	} else if fs.IsDir() {
-		return "", false
-	}
-	f, err := os.Open(path)
+
+	data, err := ioutil.ReadFile(filepath.Join(path, "go.mod"))
 	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanWords)
-	if !(scanner.Scan() && scanner.Scan()) {
 		return "", false
 	}
-	pkg := scanner.Text()
-	return pkg, true
+	mod, err := modfile.Parse(path, data, nil)
+	if err != nil {
+		return "", false
+	}
+
+	return mod.Module.Mod.Path, true
 }
 
 func isRootPackage(path string) bool {
