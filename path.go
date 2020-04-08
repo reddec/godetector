@@ -87,7 +87,7 @@ const (
 )
 
 func findPackageRootDir(absPath string) (string, packageKind) {
-	parts := filepath.SplitList(absPath)
+	parts := strings.Split(absPath, string(os.PathSeparator))
 	for i := len(parts) - 1; i >= 0; i-- {
 		path := filepath.Join(parts[:i]...)
 		_, ok := isVendorPackage(path)
