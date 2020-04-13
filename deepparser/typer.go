@@ -181,14 +181,14 @@ func (def *Definition) FindEnumValues() []Constant {
 	}
 	var resolved bool
 	for !resolved {
-		resolved = false
+		resolved = true
 		for i, n := range list {
 			if v, ok := n.ASTValue.(*ast.Ident); ok {
 				ref := indexed[v.Name]
 				n.Value = ref.Value
 				n.ASTValue = ref.ASTValue
 				list[i] = n
-				resolved = true
+				resolved = false
 			}
 		}
 	}
