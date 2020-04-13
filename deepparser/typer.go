@@ -36,9 +36,9 @@ func (tsg *Typer) Add(def *Definition) {
 	tsg.Parsed[uid] = def
 
 	for _, f := range def.StructFields() {
-		alias := detectPackageInType(f.AST.Type)
-		typeName := rebuildTypeNameWithoutPackage(f.AST.Type)
-		def := findDefinitionFromAst(typeName, alias, def.File, def.FileDir)
+		alias := DetectPackageInType(f.AST.Type)
+		typeName := RebuildTypeNameWithoutPackage(f.AST.Type)
+		def := FindDefinitionFromAst(typeName, alias, def.File, def.FileDir)
 
 		if def != nil {
 			tsg.Add(def)
@@ -48,7 +48,7 @@ func (tsg *Typer) Add(def *Definition) {
 
 // Parse and add recursively type from directory. Do nothing if not found
 func (tsg *Typer) AddFromDir(typeName string, dir string) {
-	def := findDefinitionFromAst(typeName, "", nil, dir)
+	def := FindDefinitionFromAst(typeName, "", nil, dir)
 	if def == nil {
 		return
 	}
@@ -79,7 +79,7 @@ type Definition struct {
 	File     *ast.File
 }
 
-func findDefinitionFromAst(typeName, alias string, file *ast.File, fileDir string) *Definition {
+func FindDefinitionFromAst(typeName, alias string, file *ast.File, fileDir string) *Definition {
 	var importDef godetector.Import
 	if alias != "" {
 		v, err := godetector.ResolveImport(alias, file, fileDir)
@@ -136,7 +136,7 @@ type StField struct {
 	Omitempty bool
 }
 
-func (def *Definition) isStruct() bool {
+func (def *Definition) IsStruct() bool {
 	_, ok := def.Type.Type.(*ast.StructType)
 	return ok
 }
@@ -164,7 +164,7 @@ func (def *Definition) StructFields() []*StField {
 		f := &StField{
 			Name:    field.Names[0].Name,
 			Tag:     field.Names[0].Name,
-			Type:    astPrint(field.Type, def.FS),
+			Type:    AstPrint(field.Type, def.FS),
 			Comment: comment,
 			AST:     field,
 		}
@@ -190,7 +190,7 @@ func (def *Definition) StructFields() []*StField {
 	return ans
 }
 
-func (def *Definition) removeJSONIgnoredFields() {
+func (def *Definition) RemoveJSONIgnoredFields() {
 	st, ok := def.Type.Type.(*ast.StructType)
 	if !ok {
 		return
@@ -225,49 +225,49 @@ func (def *Definition) removeJSONIgnoredFields() {
 	st.Fields.List = filtered
 }
 
-func astPrint(t ast.Node, fs *token.FileSet) string {
+func AstPrint(t ast.Node, fs *token.FileSet) string {
 	var buf bytes.Buffer
 	printer.Fprint(&buf, fs, t)
 	return buf.String()
 }
 
-func detectPackageInType(t ast.Expr) string {
+func DetectPackageInType(t ast.Expr) string {
 	if acc, ok := t.(*ast.SelectorExpr); ok {
 		return acc.X.(*ast.Ident).Name
 	} else if ptr, ok := t.(*ast.StarExpr); ok {
-		return detectPackageInType(ptr.X)
+		return DetectPackageInType(ptr.X)
 	} else if arr, ok := t.(*ast.ArrayType); ok {
-		return detectPackageInType(arr.Elt)
+		return DetectPackageInType(arr.Elt)
 	}
 	return ""
 }
 
-func rebuildOps(t ast.Expr) string {
+func RebuildOps(t ast.Expr) string {
 	if ptr, ok := t.(*ast.StarExpr); ok {
-		return "*" + rebuildOps(ptr.X)
+		return "*" + RebuildOps(ptr.X)
 	}
 	if arr, ok := t.(*ast.ArrayType); ok {
-		return "[]" + rebuildOps(arr.Elt)
+		return "[]" + RebuildOps(arr.Elt)
 	}
 	return ""
 }
 
-func rebuildTypeNameWithoutPackage(t ast.Expr) string {
+func RebuildTypeNameWithoutPackage(t ast.Expr) string {
 	if v, ok := t.(*ast.Ident); ok {
 		return v.Name
 	}
 	if ptr, ok := t.(*ast.StarExpr); ok {
-		return rebuildTypeNameWithoutPackage(ptr.X)
+		return RebuildTypeNameWithoutPackage(ptr.X)
 	}
 	if acc, ok := t.(*ast.SelectorExpr); ok {
 		return acc.Sel.Name
 	}
 	if arr, ok := t.(*ast.ArrayType); ok {
-		return rebuildTypeNameWithoutPackage(arr.Elt)
+		return RebuildTypeNameWithoutPackage(arr.Elt)
 	}
 	return ""
 }
 
 func RemoveJsonIgnoredFields(def *Definition) {
-	def.removeJSONIgnoredFields()
+	def.RemoveJSONIgnoredFields()
 }
