@@ -63,7 +63,7 @@ func findPackagePathInModules(importPath, modProjectDir string) (string, error) 
 			if req.Mod.Version != "" {
 				ep = ep + "@" + req.Mod.Version
 			}
-			return filepath.Join(os.Getenv("GOPATH"), "pkg", "mod", ep), nil
+			return filepath.Join(os.Getenv("GOPATH"), "pkg", "mod", ep, tail(req.Mod.Path, importPath)), nil
 		}
 	}
 	// check in root
@@ -93,4 +93,21 @@ func relatesToPackage(rootPkg, suspectPkg string) bool {
 		}
 	}
 	return true
+}
+
+func tail(rootPkg, suspectPkg string) string {
+	if rootPkg == suspectPkg {
+		return ""
+	}
+	rParts := strings.Split(rootPkg, "/")
+	cParts := strings.Split(suspectPkg, "/")
+	if len(cParts) < len(rParts) {
+		return ""
+	}
+	for i, parent := range rParts {
+		if cParts[i] != parent {
+			return ""
+		}
+	}
+	return strings.Join(cParts[len(rParts):], "/")
 }
