@@ -77,6 +77,7 @@ type Definition struct {
 	FS       *token.FileSet
 	FileDir  string
 	File     *ast.File
+	Package  map[string]*ast.Package
 }
 
 func FindDefinitionFromAst(typeName, alias string, file *ast.File, fileDir string) *Definition {
@@ -117,6 +118,7 @@ func FindDefinitionFromAst(typeName, alias string, file *ast.File, fileDir strin
 								TypeName: typeName,
 								FileDir:  importDef.Location,
 								File:     packageFile,
+								Package:  importFile,
 							}
 						}
 					}
@@ -127,13 +129,70 @@ func FindDefinitionFromAst(typeName, alias string, file *ast.File, fileDir strin
 	return nil
 }
 
-type StField struct {
-	Name      string
-	Type      string
-	Tag       string
-	Comment   string
-	AST       *ast.Field
-	Omitempty bool
+func (def *Definition) IsTypeAlias() bool {
+	_, ok := def.Type.Type.(*ast.Ident)
+	return ok
+}
+
+type Constant struct {
+	Def      *Definition
+	Name     string
+	Value    string
+	ASTValue ast.Expr
+}
+
+func (def *Definition) findConstantValues() []Constant {
+	_, ok := def.Type.Type.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	var ans []Constant
+
+	for _, packageDefintion := range def.Package {
+		for _, packageFile := range packageDefintion.Files {
+			for _, decl := range packageFile.Decls {
+				if v, ok := decl.(*ast.GenDecl); ok && v.Tok == token.CONST {
+					for _, spec := range v.Specs {
+						if val, ok := spec.(*ast.ValueSpec); ok {
+							if itemType, ok := val.Type.(*ast.Ident); ok && itemType.Name == def.TypeName {
+								for _, itemValue := range val.Names {
+									ans = append(ans, Constant{
+										Def:      def,
+										Name:     itemValue.Name,
+										ASTValue: val.Values[0],
+										Value:    AstPrint(val.Values[0], def.FS),
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return ans
+}
+
+func (def *Definition) FindEnumValues() []Constant {
+	var indexed = make(map[string]Constant)
+	list := def.findConstantValues()
+	for _, n := range list {
+		indexed[n.Name] = n
+	}
+	var resolved bool
+	for !resolved {
+		resolved = false
+		for i, n := range list {
+			if v, ok := n.ASTValue.(*ast.Ident); ok {
+				ref := indexed[v.Name]
+				n.Value = ref.Value
+				n.ASTValue = ref.ASTValue
+				list[i] = n
+				resolved = true
+			}
+		}
+	}
+	return list
 }
 
 func (def *Definition) IsStruct() bool {
@@ -223,6 +282,15 @@ func (def *Definition) RemoveJSONIgnoredFields() {
 		}
 	}
 	st.Fields.List = filtered
+}
+
+type StField struct {
+	Name      string
+	Type      string
+	Tag       string
+	Comment   string
+	AST       *ast.Field
+	Omitempty bool
 }
 
 func AstPrint(t ast.Node, fs *token.FileSet) string {
