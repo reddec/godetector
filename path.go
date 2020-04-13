@@ -24,6 +24,9 @@ func FindImportPath(dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if imp, ok := isUnderModCache(dir); ok {
+		return imp, nil
+	}
 	return findImportPath(dir)
 }
 
@@ -64,6 +67,24 @@ func isVendorPackage(path string) (string, bool) {
 	}
 
 	return mod.Module.Mod.Path, true
+}
+
+func isUnderModCache(path string) (string, bool) {
+	GOCACHE := filepath.Join(os.Getenv("GOPATH"), "pkg", "mod")
+	absPath, _ := filepath.Abs(path)
+	if !relatesToPackage(GOCACHE, absPath) {
+		return "", false
+	}
+	t := tail(GOCACHE, absPath)
+	// abc@1.2.3/x/y/z
+	p := strings.Split(t, "@")
+	// p = {abc, 1.2.3/x/y/z}
+	sl := strings.Index(p[1], "/")
+	if sl > 0 {
+		p[1] = p[1][sl:]
+		return p[0] + p[1], true
+	}
+	return p[0], true
 }
 
 func isRootPackage(path string) bool {
