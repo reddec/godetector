@@ -14,8 +14,9 @@ import (
 
 // Deeply parsed types. Currently supports only structs
 type Typer struct {
-	Ordered []*Definition          // Inspected and parsed definition in order of inspection
-	Parsed  map[string]*Definition // Indexed definition where index is <path>@<type>
+	Ordered       []*Definition          // Inspected and parsed definition in order of inspection
+	Parsed        map[string]*Definition // Indexed definition where index is <path>@<type>
+	BeforeInspect func(def *Definition)  // Invoke hook before inspection (ex: RemoveJsonIgnoredFields)
 }
 
 // Add recursively pre-parsed structure definition
@@ -29,7 +30,9 @@ func (tsg *Typer) Add(def *Definition) {
 		tsg.Parsed = make(map[string]*Definition)
 	}
 	tsg.Ordered = append(tsg.Ordered, def)
-	def.removeJSONIgnoredFields()
+	if tsg.BeforeInspect != nil {
+		tsg.BeforeInspect(def)
+	}
 	tsg.Parsed[uid] = def
 
 	for _, f := range def.StructFields() {
@@ -263,4 +266,8 @@ func rebuildTypeNameWithoutPackage(t ast.Expr) string {
 		return rebuildTypeNameWithoutPackage(arr.Elt)
 	}
 	return ""
+}
+
+func RemoveJsonIgnoredFields(def *Definition) {
+	def.removeJSONIgnoredFields()
 }
