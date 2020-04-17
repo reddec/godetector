@@ -39,7 +39,7 @@ func (tsg *Typer) Add(def *Definition) {
 		alias := DetectPackageInType(f.AST.Type)
 		typeName := RebuildTypeNameWithoutPackage(f.AST.Type)
 		def := FindDefinitionFromAst(typeName, alias, def.File, def.FileDir)
-
+		f.Definition = def
 		if def != nil {
 			tsg.Add(def)
 		}
@@ -78,6 +78,8 @@ type Definition struct {
 	FileDir  string
 	File     *ast.File
 	Package  map[string]*ast.Package
+
+	fields []*StField
 }
 
 func FindDefinitionFromAst(typeName, alias string, file *ast.File, fileDir string) *Definition {
@@ -201,6 +203,13 @@ func (def *Definition) IsStruct() bool {
 }
 
 func (def *Definition) StructFields() []*StField {
+	if def.fields == nil {
+		def.fields = def.inspectStructFields()
+	}
+	return def.fields
+}
+
+func (def *Definition) inspectStructFields() []*StField {
 	st, ok := def.Type.Type.(*ast.StructType)
 	if !ok {
 		return nil
@@ -285,12 +294,13 @@ func (def *Definition) RemoveJSONIgnoredFields() {
 }
 
 type StField struct {
-	Name      string
-	Type      string
-	Tag       string
-	Comment   string
-	AST       *ast.Field
-	Omitempty bool
+	Name       string
+	Type       string
+	Tag        string
+	Comment    string
+	AST        *ast.Field
+	Omitempty  bool
+	Definition *Definition // could be null if can't parse
 }
 
 func AstPrint(t ast.Node, fs *token.FileSet) string {
