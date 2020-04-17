@@ -6,10 +6,41 @@ import (
 	"strconv"
 )
 
+type LocationType int
+
+const (
+	Local         LocationType = 0
+	GoMod         LocationType = 1
+	InLocalVendor LocationType = 2
+	GoPath        LocationType = 3
+	GoRoot        LocationType = 4
+	GoCache       LocationType = 5
+)
+
 type Import struct {
-	Path     string // example.com/project/alfa
-	Package  string // alfa
-	Location string // /opt/go/src/example.com/project/alfa
+	Path                string // example.com/project/alfa/beta/gamma
+	Package             string // gamma
+	Location            string // /opt/go/src/example.com/project/alfa/beta/gamma
+	RootPackageLocation string // /opt/go/src/example.com/project/alfa
+	Type                LocationType
+}
+
+func (ipi *importPathInfo) ToImport() *Import {
+	if ipi == nil {
+		return nil
+	}
+	return &Import{
+		Path:                ipi.Import,
+		Package:             FindPackageNameByDir(ipi.ImportDir),
+		Location:            ipi.ImportDir,
+		RootPackageLocation: ipi.PackageRootDir,
+		Type:                ipi.LocationType,
+	}
+
+}
+
+func (ipi *importPathInfo) Root() (*Import, error) {
+	return InspectImportByDir(ipi.PackageRootDir)
 }
 
 // Find correct import definition in a file: "lala" "net/http" will be resolve to "net/http"
@@ -22,16 +53,8 @@ func ResolveImport(alias string, file *ast.File, workdir string) (*Import, error
 		if imp.Name != nil {
 			if imp.Name.Name == alias {
 				importPath, _ := strconv.Unquote(imp.Path.Value)
-				dir, err := FindPackageDefinitionDir(importPath, workdir)
-				if err != nil {
-					return nil, err
-				}
-				realPackageName := FindPackageNameByDir(dir)
-				return &Import{
-					Path:     importPath,
-					Package:  realPackageName,
-					Location: dir,
-				}, nil
+				info, err := InspectImport(importPath, workdir)
+				return info.ToImport(), err
 			}
 		}
 	}
@@ -39,17 +62,13 @@ func ResolveImport(alias string, file *ast.File, workdir string) (*Import, error
 
 		path, _ := strconv.Unquote(imp.Path.Value)
 
-		pkgDir, err := FindPackageDefinitionDir(path, workdir)
+		pkgInfo, err := InspectImport(path, workdir)
 		if err != nil {
 			return nil, err
 		}
-		pkgName := FindPackageNameByDir(pkgDir)
-		if pkgName == alias {
-			return &Import{
-				Path:     path,
-				Package:  pkgName,
-				Location: pkgDir,
-			}, nil
+		imp := pkgInfo.ToImport()
+		if imp.Package == alias {
+			return imp, nil
 		}
 	}
 	return nil, fmt.Errorf("unresolved alias or package %s", alias)
@@ -57,14 +76,6 @@ func ResolveImport(alias string, file *ast.File, workdir string) (*Import, error
 
 // Aggregated information about directory
 func InspectImportByDir(pkgDir string) (*Import, error) {
-	path, err := FindImportPath(pkgDir)
-	if err != nil {
-		return nil, err
-	}
-	pkgName := FindPackageNameByDir(pkgDir)
-	return &Import{
-		Path:     path,
-		Package:  pkgName,
-		Location: pkgDir,
-	}, nil
+	info, err := InspectDirectory(pkgDir)
+	return info.ToImport(), err
 }

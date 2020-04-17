@@ -2,10 +2,10 @@ package godetector
 
 import (
 	"errors"
+	"go/build"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,35 +13,46 @@ import (
 
 // Find package definition with respect to gomodules
 func FindPackageDefinitionDir(importPath string, workDir string) (string, error) {
-	abs, err := filepath.Abs(workDir)
+	info, err := InspectImport(importPath, workDir)
 	if err != nil {
 		return "", err
 	}
-	rootDir, kind := findPackageRootDir(abs)
-
-	packageImport, _ := FindImportPath(rootDir)
-
-	if relatesToPackage(packageImport, importPath) {
-		childDir := importPath[len(packageImport):]
-		return filepath.Join(rootDir, childDir), nil
-	}
-
-	if kind == gopath || kind == unspecified {
-		return findPackagePathInGoPath(importPath)
-	}
-	return findPackagePathInModules(importPath, rootDir)
+	return info.ImportDir, err
 }
 
-func findPackagePathInGoPath(importPath string) (string, error) {
-	inRootPath := filepath.Join(runtime.GOROOT(), "src", importPath)
-	if _, err := os.Stat(inRootPath); err == nil {
-		return inRootPath, nil
+func InspectImport(importPath string, workDir string) (info *importPathInfo, err error) {
+	abs, err := filepath.Abs(workDir)
+	if err != nil {
+		return nil, err
 	}
-	inGoPath := filepath.Join(os.Getenv("GOPATH"), "src", importPath)
-	if _, err := os.Stat(inGoPath); err == nil {
-		return inGoPath, nil
+
+	rootInfo, err := InspectDirectory(abs)
+	if err != nil {
+		return nil, err
 	}
-	return "", errors.New("not found in GOROOT or in GOPATH")
+
+	if relatesToPackage(rootInfo.Import, importPath) {
+		childDir := importPath[len(rootInfo.Import):]
+		return &importPathInfo{
+			PackageRootDir: rootInfo.PackageRootDir,
+			LocationType:   rootInfo.LocationType,
+			ImportDir:      filepath.Join(rootInfo.PackageRootDir, childDir),
+			Import:         importPath,
+		}, nil
+	}
+
+	// check GOROOT
+	if info, err := inspectDirectory(filepath.Join(runtime.GOROOT(), "src", importPath)); err == nil {
+		return info, nil
+	}
+	// check local modules if applicable
+	if rootInfo.LocationType == GoMod {
+		if dir, err := findPackagePathInModules(importPath, rootInfo.PackageRootDir); err == nil {
+			return inspectDirectory(dir)
+		}
+	}
+	// check GOPATH
+	return inspectDirectory(filepath.Join(build.Default.GOPATH, "src", importPath))
 }
 
 func findPackagePathInModules(importPath, modProjectDir string) (string, error) {
@@ -63,12 +74,12 @@ func findPackagePathInModules(importPath, modProjectDir string) (string, error) 
 			if req.Mod.Version != "" {
 				ep = ep + "@" + req.Mod.Version
 			}
-			return filepath.Join(os.Getenv("GOPATH"), "pkg", "mod", ep, tail(req.Mod.Path, importPath)), nil
+			return filepath.Join(build.Default.GOPATH, "pkg", "mod", ep, tail(req.Mod.Path, importPath)), nil
 		}
 	}
 	// check in root
 
-	return findPackagePathInGoPath(importPath)
+	return "", errors.New("not found in go.mod")
 }
 
 // github.com/reddec/godetector/cmd

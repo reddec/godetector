@@ -2,6 +2,8 @@ package godetector
 
 import (
 	"errors"
+	"fmt"
+	"go/build"
 	"golang.org/x/mod/modfile"
 	"io/ioutil"
 	"os"
@@ -16,46 +18,102 @@ import (
 //
 // It will check all upper directories checking each of them as (a) they have go.mod file (b) directory is under GOROOT/GOPATH
 func FindImportPath(dir string) (string, error) {
-	const Vendor = "vendor/"
-	if strings.HasPrefix(dir, Vendor) {
-		return dir[len(Vendor):], nil
-	}
-	dir, err := filepath.Abs(dir)
+	info, err := InspectDirectory(dir)
 	if err != nil {
 		return "", err
 	}
-	if imp, ok := isUnderModCache(dir); ok {
-		return imp, nil
-	}
-	return findImportPath(dir)
+	return info.Import, nil
 }
 
-func findImportPath(dir string) (string, error) {
+func InspectDirectory(dir string) (info *importPathInfo, err error) {
+	const vendor = "vendor/"
+	if strings.HasPrefix(dir, vendor) {
+		return &importPathInfo{
+			PackageRootDir: "vendor",
+			ImportDir:      dir,
+			LocationType:   InLocalVendor,
+			Import:         dir[len(vendor):],
+		}, nil
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	return inspectDirectory(dir)
+}
+
+type importPathInfo struct {
+	PackageRootDir string
+	ImportDir      string
+	LocationType   LocationType
+	Import         string
+}
+
+func inspectDirectory(dir string) (*importPathInfo, error) {
 	if dir == "" {
-		return "", errors.New("undetectable dir")
+		return nil, errors.New("undetectable dir")
 	}
-	if isRootPackage(dir) {
-		return "", nil
+	if v, err := os.Stat(dir); err != nil {
+		return nil, err
+	} else if !v.IsDir() {
+		return nil, fmt.Errorf("%s is not a dir", dir)
 	}
-	pkg, ok := isVendorPackage(dir)
+	if isGoRoot(dir) {
+		return &importPathInfo{
+			PackageRootDir: dir,
+			ImportDir:      dir,
+			LocationType:   GoRoot,
+		}, nil
+	}
+	if isGoPath(dir) {
+		return &importPathInfo{
+			PackageRootDir: dir,
+			ImportDir:      dir,
+			LocationType:   GoPath,
+		}, nil
+	}
+	if imp, root, ok := isUnderModCache(dir); ok {
+		return &importPathInfo{
+			PackageRootDir: root,
+			ImportDir:      dir,
+			LocationType:   GoCache,
+			Import:         imp,
+		}, nil
+	}
+	pkg, ok := hasModFile(dir)
 	if ok {
-		return pkg, nil
+		return &importPathInfo{
+			PackageRootDir: dir,
+			ImportDir:      dir,
+			LocationType:   GoMod,
+			Import:         pkg,
+		}, nil
 	}
 	mod := filepath.Base(dir)
 	if mod == dir {
-		return "", errors.New("reached top directory")
+		return nil, errors.New("reached top directory")
 	}
-	top, err := findImportPath(filepath.Dir(dir))
+	info, err := inspectDirectory(filepath.Dir(dir))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if top != "" {
-		return top + "/" + mod, nil
+	if info.Import != "" {
+		return &importPathInfo{
+			ImportDir:      dir,
+			PackageRootDir: info.PackageRootDir,
+			LocationType:   info.LocationType,
+			Import:         info.Import + "/" + mod,
+		}, nil
 	}
-	return mod, nil
+	return &importPathInfo{
+		ImportDir:      dir,
+		PackageRootDir: info.PackageRootDir,
+		LocationType:   info.LocationType,
+		Import:         mod,
+	}, nil
 }
 
-func isVendorPackage(path string) (string, bool) {
+func hasModFile(path string) (string, bool) {
 
 	data, err := ioutil.ReadFile(filepath.Join(path, "go.mod"))
 	if err != nil {
@@ -69,28 +127,35 @@ func isVendorPackage(path string) (string, bool) {
 	return mod.Module.Mod.Path, true
 }
 
-func isUnderModCache(path string) (string, bool) {
-	GOCACHE := filepath.Join(os.Getenv("GOPATH"), "pkg", "mod")
+func isUnderModCache(path string) (imp string, root string, ok bool) {
+	GOCACHE := filepath.Join(build.Default.GOPATH, "pkg", "mod")
 	absPath, _ := filepath.Abs(path)
 	if !relatesToPackage(GOCACHE, absPath) {
-		return "", false
+		return "", "", false
 	}
 	t := tail(GOCACHE, absPath)
 	// abc@1.2.3/x/y/z
 	p := strings.Split(t, "@")
 	// p = {abc, 1.2.3/x/y/z}
 	sl := strings.Index(p[1], "/")
+
+	root = filepath.Join(GOCACHE, strings.Split(t, "/")[0])
+
 	if sl > 0 {
 		p[1] = p[1][sl:]
-		return p[0] + p[1], true
+		return p[0] + p[1], root, true
 	}
-	return p[0], true
+	return p[0], root, true
 }
 
-func isRootPackage(path string) bool {
-	GOPATH := filepath.Join(os.Getenv("GOPATH"), "src")
+func isGoPath(path string) bool {
+	GOPATH := filepath.Join(build.Default.GOPATH, "src")
+	return isRootOf(path, GOPATH)
+}
+
+func isGoRoot(path string) bool {
 	GOROOT := filepath.Join(runtime.GOROOT(), "src")
-	return isRootOf(path, GOPATH) || isRootOf(path, GOROOT)
+	return isRootOf(path, GOROOT)
 }
 
 func isRootOf(path, root string) bool {
@@ -99,25 +164,9 @@ func isRootOf(path, root string) bool {
 	return root == path
 }
 
-type packageKind int
-
-const (
-	gopath      packageKind = 0
-	modules     packageKind = 1
-	unspecified packageKind = gopath
-)
-
-func findPackageRootDir(absPath string) (string, packageKind) {
-	parts := strings.Split(absPath, string(os.PathSeparator))
-	for i := len(parts) - 1; i >= 0; i-- {
-		path := string(os.PathSeparator) + filepath.Join(parts[:i]...)
-		_, ok := isVendorPackage(path)
-		if ok {
-			return path, modules
-		}
-		if isRootPackage(path) {
-			return path, gopath
-		}
-	}
-	return absPath, unspecified
+type Package struct {
+	Location string
+	Import   string
+	Name     string
+	Type     LocationType
 }
