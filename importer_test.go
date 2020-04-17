@@ -54,7 +54,7 @@ func TestFindPackageDefinitionDir(t *testing.T) {
 	t.Log(impPath)
 	assert.Equal(t, "github.com/reddec/fluent-amqp", impPath)
 
-	imp, err := InspectImportByDir("./deepparser/examples")
+	imp, err := InspectImportByDir("../godetector/deepparser/examples")
 	if !assert.NoError(t, err) {
 		return
 	}
@@ -65,4 +65,11 @@ func TestFindPackageDefinitionDir(t *testing.T) {
 	assert.Equal(t, cwd, imp.RootPackageLocation)
 	assert.Equal(t, GoMod, imp.Type)
 	t.Log(imp.RootPackageLocation)
+
+	// ensure that test package will no be included
+	timePkg, err := InspectImport("time", ".")
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, "time", timePkg.ToImport().Package)
 }

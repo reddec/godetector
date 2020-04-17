@@ -23,7 +23,7 @@ func FindPackageNameByDir(dir string) string {
 		if file.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(file.Name(), ".go") {
+		if strings.HasSuffix(file.Name(), ".go") && !strings.HasSuffix(file.Name(), "_test.go") {
 			var fs token.FileSet
 			parsed, err := parser.ParseFile(&fs, filepath.Join(abs, file.Name()), nil, parser.PackageClauseOnly)
 			if err != nil {
