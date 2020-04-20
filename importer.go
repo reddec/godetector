@@ -31,14 +31,20 @@ func InspectImport(importPath string, workDir string) (info *importPathInfo, err
 		return nil, err
 	}
 
-	if relatesToPackage(rootInfo.Import, importPath) {
-		childDir := importPath[len(rootInfo.Import):]
-		return &importPathInfo{
-			PackageRootDir: rootInfo.PackageRootDir,
-			LocationType:   rootInfo.LocationType,
-			ImportDir:      filepath.Join(rootInfo.PackageRootDir, childDir),
-			Import:         importPath,
-		}, nil
+	if rootInfo.LocationType == GoMod {
+		rootImport, err := rootInfo.Root()
+		if err != nil {
+			return nil, err
+		}
+		if relatesToPackage(rootImport.Path, importPath) {
+			childDir := importPath[len(rootImport.Path):]
+			return &importPathInfo{
+				PackageRootDir: rootInfo.PackageRootDir,
+				LocationType:   rootInfo.LocationType,
+				ImportDir:      filepath.Join(rootInfo.PackageRootDir, childDir),
+				Import:         importPath,
+			}, nil
+		}
 	}
 
 	// check GOROOT
